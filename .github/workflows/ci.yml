@@ -1,0 +1,21 @@
+name: CI
+
+# Pull requests only — pushes to main run the full Release workflow (which
+# also typechecks, tests, and builds), so running CI there would just double
+# the Actions minutes.
+on:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

@@ -1,0 +1,82 @@
+name: Release
+
+# Every push to main builds the installers and publishes them on a release
+# named after package.json's version (created if missing, assets replaced if
+# it exists). Tag pushes (v*) still work too.
+#
+# Heads-up for private repos: the macOS job burns Actions minutes at a 10×
+# multiplier — bump the version when you want a fresh release, and avoid
+# rapid-fire pushes (in-flight builds are auto-cancelled by newer ones).
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      # One platform failing must not cancel the other's installers.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifacts: release/*.exe
+          - os: macos-14 # arm64 (Apple Silicon) runner
+            artifacts: |
+              release/*.dmg
+              release/*.zip
+          - os: ubuntu-latest # x64 AppImage + tar.gz
+            artifacts: |
+              release/*.AppImage
+              release/*.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # The macOS click helper (Product demo) cannot be tried on a Windows
+      # machine. This runs its self-check on the Mac runner and prints what it
+      # said. It never fails the build: read this step's log.
+      - name: Check the macOS pointer helper
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        shell: bash
+        run: |
+          osascript -l JavaScript resources/pointer/pointer-mac.js test > pointer-check.txt 2> pointer-check.err || true
+          cat pointer-check.txt pointer-check.err
+          if grep -q '^ready$' pointer-check.txt && grep -q '^r ' pointer-check.txt; then
+            echo "pointer helper: OK"
+          else
+            echo "::warning::The macOS pointer helper self-check did not pass: clicks may not be recorded on a Mac."
+            exit 1
+          fi
+      - run: npm run dist
+        env:
+          # No code-signing identities yet; electron-builder ad-hoc signs on
+          # macOS so Apple Silicon will launch the app (Gatekeeper still needs
+          # right-click → Open on first run).
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Read version
+        id: ver
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Krypt Editor v${{ steps.ver.outputs.version }}
+          draft: false
+          files: ${{ matrix.artifacts }}
