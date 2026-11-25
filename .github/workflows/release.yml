@@ -30,7 +30,11 @@ jobs:
         include:
           - os: windows-latest
             artifacts: release/*.exe
-          - os: macos-14 # arm64 (Apple Silicon) runner
+          # arm64 (Apple Silicon) runner. GitHub retires each numbered macOS
+          # image after about two years (macos-14 went on 2026-11-02, and the
+          # job then dies with "The configuration ... is not supported"):
+          # move to the next number when that happens.
+          - os: macos-15
             artifacts: |
               release/*.dmg
               release/*.zip
